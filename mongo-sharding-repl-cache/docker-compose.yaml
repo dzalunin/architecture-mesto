@@ -1,0 +1,252 @@
+---
+
+x-mongo-common: &mongo-common
+  image: mongo:latest
+  restart: always
+  healthcheck:
+    test: [ "CMD", "mongo", "--eval", "db.adminCommand('ping')" ]
+    interval: 5s
+    start_period: 10s
+
+services:
+  pymongo_api:
+    container_name: pymongo_api
+    build: 
+      context: ../api_app
+      dockerfile: Dockerfile
+    image: kazhem/pymongo_api:1.0.0
+    depends_on:
+      - router
+    ports:
+      - 8080:8080
+    networks:
+      app-network:
+        ipv4_address: 173.18.0.2  
+    environment:
+      MONGODB_URL: "mongodb://router:27017"
+      MONGODB_DATABASE_NAME: "somedb"
+      REDIS_URL: "redis://redis-master:6379"
+
+  redis-master:
+    image: "redis:latest"
+    container_name: redis-master
+    volumes:
+      - redis_master_data:/data
+      - ./redis/redis_master.conf:/usr/local/etc/redis/redis.conf
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
+    networks:
+      app-network:
+        ipv4_address: 173.18.0.4
+
+  redis-slave1:
+    image: redis:latest
+    hostname: redis-slave1
+    volumes:
+      - redis_slave1_data:/data
+      - ./redis/redis_slave.conf:/usr/local/etc/redis/redis.conf
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]  
+    networks:
+      app-network:
+        ipv4_address: 173.18.0.5
+
+  redis-slave2:
+    image: redis:latest
+    hostname: redis-slave2
+    volumes:
+      - redis_slave2_data:/data
+      - ./redis/redis_slave.conf:/usr/local/etc/redis/redis.conf
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]  
+    networks:
+      app-network:
+        ipv4_address: 173.18.0.6
+
+  router:
+    <<: *mongo-common
+    container_name: router
+    command:
+      [
+        "mongos",
+        "--configdb", 
+        "config_server/config_srv:27017",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]      
+    volumes:
+      - router_db:/data/db
+      - router_config:/data/configdb                    
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.7
+      app-network:
+        ipv4_address: 173.18.0.3
+
+  config_srv:
+    <<: *mongo-common  
+    container_name: config_srv 
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.8
+    volumes:
+      - config_srv_db:/data/db
+      - config_srv_config:/data/configdb
+    command:
+      [
+        "mongod",
+        "--configsvr",
+        "--replSet",
+        "config_server",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]      
+  
+  shard1:
+    <<: *mongo-common  
+    container_name: shard1
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.9
+    volumes:
+      - shard1_db:/data/db
+      - shard1_config:/data/configdb
+    command:
+      [
+        "mongod",
+        "--shardsvr", 
+        "--replSet",
+        "rs1",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]
+  shard1-1:
+    <<: *mongo-common  
+    container_name: shard1-1
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.10
+    volumes:
+      - shard1-1_db:/data/db
+      - shard1-1_config:/data/configdb
+    command:
+      [
+        "mongod",
+        "--shardsvr", 
+        "--replSet",
+        "rs1",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]
+  shard1-2:
+    <<: *mongo-common  
+    container_name: shard1-2
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.11
+    volumes:
+      - shard1-2_db:/data/db
+      - shard1-2_config:/data/configdb
+    command:
+      [
+        "mongod",
+        "--shardsvr", 
+        "--replSet",
+        "rs1",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]
+  
+  shard2:
+    <<: *mongo-common 
+    container_name: shard2
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.12
+    volumes:
+      - shard2_db:/data/db
+      - shard2_config:/data/configdb
+    command:
+      [
+        "mongod",
+        "--shardsvr",
+        "--replSet",
+        "rs2",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]
+  shard2-1:
+    <<: *mongo-common  
+    container_name: shard2-1
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.13
+    volumes:
+      - shard2-1_db:/data/db
+      - shard2-1_config:/data/configdb
+    command:
+      [
+        "mongod",
+        "--shardsvr", 
+        "--replSet",
+        "rs2",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]
+  shard2-2:
+    <<: *mongo-common  
+    container_name: shard2-2
+    networks:
+      db-network:
+        ipv4_address: 173.17.0.14
+    volumes:
+      - shard2-2_db:/data/db
+      - shard2-2_config:/data/configdb
+    command:
+      [
+        "mongod",
+        "--shardsvr", 
+        "--replSet",
+        "rs2",
+        "--bind_ip_all",
+        "--port",
+        "27017"
+      ]
+
+networks:
+  app-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 173.18.0.0/24
+  db-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 173.17.0.0/24
+volumes:
+  router_db:
+  router_config:
+  config_srv_db:
+  config_srv_config:
+  shard1_db:
+  shard1_config:
+  shard1-1_db:
+  shard1-1_config:
+  shard1-2_db:
+  shard1-2_config:
+  shard2_db:
+  shard2_config:
+  shard2-1_db:
+  shard2-1_config:
+  shard2-2_db:
+  shard2-2_config:
+  redis_master_data:
+  redis_slave1_data:
+  redis_slave2_data:
